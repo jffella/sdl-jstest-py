@@ -530,6 +530,335 @@ def test_rumble_direct(joystick, joy_id: int) -> bool:
         print(f"Direct rumble method failed: {e}")
         return False
 
+def test_forcefeedback(joy_id: int):
+    """Test complet des effets de force feedback (pour volants principalement)"""
+    pygame.init()
+    pygame.joystick.init()
+    
+    if joy_id >= pygame.joystick.get_count():
+        print(f"Error: Joystick {joy_id} not found")
+        return
+    
+    try:
+        joystick = pygame.joystick.Joystick(joy_id)
+        joystick.init()
+    except pygame.error as e:
+        print(f"Unable to open joystick {joy_id}: {e}")
+        return
+    
+    print(f"Testing force feedback on device {joy_id}: '{joystick.get_name()}'")
+    
+    try:
+        import evdev
+        test_advanced_forcefeedback(joystick, joy_id)
+    except ImportError:
+        print("evdev not available. Force feedback requires evdev.")
+        print("Install with: pip install evdev")
+    
+    joystick.quit()
+    pygame.quit()
+
+def test_advanced_forcefeedback(joystick, joy_id: int):
+    """Test avancé des effets de force feedback avec evdev"""
+    try:
+        import evdev
+        from evdev import InputDevice, ff, ecodes
+        
+        device_path = find_evdev_device(joystick)
+        if not device_path:
+            print("Could not find evdev device for this joystick")
+            return
+        
+        print(f"Using evdev device: {device_path}")
+        device = InputDevice(device_path)
+        
+        if ecodes.EV_FF not in device.capabilities():
+            print("Device does not support force feedback")
+            device.close()
+            return
+        
+        ff_capabilities = device.capabilities()[ecodes.EV_FF]
+        print("Force feedback capabilities detected:")
+        
+        # Analyser les capacités
+        capabilities = []
+        for cap in ff_capabilities:
+            if cap in ecodes.FF:
+                cap_name = ecodes.FF[cap]
+                capabilities.append((cap, cap_name))
+                print(f"  - {cap_name} (0x{cap:02X})")
+        
+        if not capabilities:
+            print("No force feedback effects available")
+            device.close()
+            return
+        
+        print("\nStarting force feedback test sequence...")
+        print("Each effect will last 3 seconds\n")
+        
+        effects_tested = 0
+        
+        # Test 1: Effet constant (résistance constante)
+        if ecodes.FF_CONSTANT in ff_capabilities:
+            print("1. Testing CONSTANT force (steering resistance)...")
+            try:
+                constant = ff.Constant(level=0x4000, envelope=ff.Envelope(0, 0, 0, 0))
+                effect = ff.Effect(
+                    ecodes.FF_CONSTANT,
+                    -1, 0,  # id, direction
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    constant
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Constant force test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Constant force failed: {e}")
+        
+        # Test 2: Effet de ressort (spring effect)
+        if ecodes.FF_SPRING in ff_capabilities:
+            print("2. Testing SPRING effect (centering force)...")
+            try:
+                spring = ff.Condition(
+                    right_saturation=0x7FFF, left_saturation=0x7FFF,
+                    right_coeff=0x4000, left_coeff=0x4000,
+                    deadband=0x100, center=0
+                )
+                effect = ff.Effect(
+                    ecodes.FF_SPRING,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    spring
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Spring effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Spring effect failed: {e}")
+        
+        # Test 3: Effet d'amortissement (damper)
+        if ecodes.FF_DAMPER in ff_capabilities:
+            print("3. Testing DAMPER effect (velocity damping)...")
+            try:
+                damper = ff.Condition(
+                    right_saturation=0x7FFF, left_saturation=0x7FFF,
+                    right_coeff=0x2000, left_coeff=0x2000,
+                    deadband=0x100, center=0
+                )
+                effect = ff.Effect(
+                    ecodes.FF_DAMPER,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    damper
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Damper effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Damper effect failed: {e}")
+        
+        # Test 4: Effet d'inertie
+        if ecodes.FF_INERTIA in ff_capabilities:
+            print("4. Testing INERTIA effect (mass simulation)...")
+            try:
+                inertia = ff.Condition(
+                    right_saturation=0x7FFF, left_saturation=0x7FFF,
+                    right_coeff=0x3000, left_coeff=0x3000,
+                    deadband=0x100, center=0
+                )
+                effect = ff.Effect(
+                    ecodes.FF_INERTIA,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    inertia
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Inertia effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Inertia effect failed: {e}")
+        
+        # Test 5: Effet de friction
+        if ecodes.FF_FRICTION in ff_capabilities:
+            print("5. Testing FRICTION effect...")
+            try:
+                friction = ff.Condition(
+                    right_saturation=0x7FFF, left_saturation=0x7FFF,
+                    right_coeff=0x4000, left_coeff=0x4000,
+                    deadband=0x100, center=0
+                )
+                effect = ff.Effect(
+                    ecodes.FF_FRICTION,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    friction
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Friction effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Friction effect failed: {e}")
+        
+        # Test 6: Effet périodique (vibrations, oscillations)
+        if ecodes.FF_PERIODIC in ff_capabilities:
+            print("6. Testing PERIODIC effects...")
+            
+            # Test sine wave
+            print("   6a. Sine wave...")
+            try:
+                sine = ff.Periodic(
+                    waveform=ecodes.FF_SINE,
+                    period=200,  # 200ms period
+                    magnitude=0x4000,
+                    offset=0,
+                    phase=0,
+                    envelope=ff.Envelope(500, 0, 0, 500)  # fade in/out
+                )
+                effect = ff.Effect(
+                    ecodes.FF_PERIODIC,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    sine
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("      ✓ Sine wave test completed")
+            except Exception as e:
+                print(f"      ✗ Sine wave failed: {e}")
+            
+            # Test square wave
+            print("   6b. Square wave...")
+            try:
+                square = ff.Periodic(
+                    waveform=ecodes.FF_SQUARE,
+                    period=150,
+                    magnitude=0x3000,
+                    offset=0,
+                    phase=0,
+                    envelope=ff.Envelope(300, 0, 0, 300)
+                )
+                effect = ff.Effect(
+                    ecodes.FF_PERIODIC,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    square
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("      ✓ Square wave test completed")
+            except Exception as e:
+                print(f"      ✗ Square wave failed: {e}")
+            
+            effects_tested += 1
+        
+        # Test 7: Effet de rampe (force qui change graduellement)
+        if ecodes.FF_RAMP in ff_capabilities:
+            print("7. Testing RAMP effect (gradual force change)...")
+            try:
+                ramp = ff.Ramp(
+                    start_level=-0x4000,  # Commence vers la gauche
+                    end_level=0x4000,     # Finit vers la droite
+                    envelope=ff.Envelope(500, 0, 0, 500)
+                )
+                effect = ff.Effect(
+                    ecodes.FF_RAMP,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    ramp
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Ramp effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Ramp effect failed: {e}")
+        
+        # Test 8: Test de rumble (si disponible)
+        if ecodes.FF_RUMBLE in ff_capabilities:
+            print("8. Testing RUMBLE effect...")
+            try:
+                rumble = ff.Rumble(strong_magnitude=0x8000, weak_magnitude=0x4000)
+                effect = ff.Effect(
+                    ecodes.FF_RUMBLE,
+                    -1, 0,
+                    ff.Trigger(0, 0),
+                    ff.Replay(3000, 0),
+                    rumble
+                )
+                
+                effect_id = device.upload_effect(effect)
+                device.write(ecodes.EV_FF, effect_id, 1)
+                time.sleep(3)
+                device.write(ecodes.EV_FF, effect_id, 0)
+                device.erase_effect(effect_id)
+                print("   ✓ Rumble effect test completed")
+                effects_tested += 1
+            except Exception as e:
+                print(f"   ✗ Rumble effect failed: {e}")
+        
+        print(f"\nForce feedback test completed!")
+        print(f"Successfully tested {effects_tested} effect types")
+        
+        if effects_tested == 0:
+            print("No effects could be tested. This may indicate:")
+            print("- Device doesn't support force feedback")
+            print("- Permission issues (try running as root or add user to input group)")
+            print("- Driver issues")
+        
+        device.close()
+        
+    except Exception as e:
+        print(f"Force feedback test failed: {e}")
+        print("Make sure you have:")
+        print("- evdev installed (pip install evdev)")
+        print("- Proper permissions to access /dev/input/event* devices")
+        print("- A device that supports force feedback")
+
 def print_help(program_name: str):
     """Affiche l'aide du programme"""
     print(f"Usage: {program_name} [OPTION]")
@@ -544,8 +873,10 @@ def print_help(program_name: str):
     print("  -t, --test JOYNUM      Display a graphical representation of the current joystick state")
     print("  -e, --event JOYNUM     Display the events that are received from the joystick")
     print("  -r, --rumble JOYNUM    Test rumble effects on gamepad JOYNUM (requires evdev)")
+    print("  -f, --forcefeedback JOYNUM")
+    print("                         Test advanced force feedback effects on wheel JOYNUM")
     print()
-    print("Dependencies for rumble support:")
+    print("Dependencies for rumble/force feedback support:")
     print("  pip install evdev")
     print("  Make sure you have permission to access /dev/input/event* devices")
     print()
@@ -560,6 +891,7 @@ def main():
     parser.add_argument('-t', '--test', type=int, metavar='JOYNUM', help='Test joystick JOYNUM')
     parser.add_argument('-e', '--event', type=int, metavar='JOYNUM', help='Show events from joystick JOYNUM')
     parser.add_argument('-r', '--rumble', type=int, metavar='JOYNUM', help='Test rumble on joystick JOYNUM')
+    parser.add_argument('-f', '--forcefeedback', type=int, metavar='JOYNUM', help='Test force feedback effects on joystick JOYNUM')
     
     if len(sys.argv) == 1:
         print_help(sys.argv[0])
@@ -578,6 +910,8 @@ def main():
         event_joystick(args.event)
     elif args.rumble is not None:
         test_rumble(args.rumble)
+    elif args.forcefeedback is not None:
+        test_forcefeedback(args.forcefeedback)
     else:
         print_help(sys.argv[0])
 
